@@ -50,7 +50,7 @@ def new_snapshot(disk, snapshotdir, snapshotprefix, readonly=True):
         print("Error on command:", str(command), file=sys.stderr)
         return None
 
-def send_snapshot(srcloc, destloc, prevsnapshot=None, debug=False):
+def send_snapshot(srcloc, destloc, prevsnapshot=None, debug=False, receive=True):
     if debug:
         flags = ['-vv']
     else:
@@ -61,16 +61,26 @@ def send_snapshot(srcloc, destloc, prevsnapshot=None, debug=False):
         srccmd += ['-p', prevsnapshot]
     srccmd += [srcloc]
 
-    destcmd = ['btrfs', 'receive'] + flags + [destloc]
+    if receive:
+        destcmd = ['btrfs', 'receive'] + flags + [destloc]
 
-    #print(srccmd)
-    #print(destcmd)
+        #print(srccmd)
+        #print(destcmd)
 
-    pipe = subprocess.Popen(srccmd, stdout=subprocess.PIPE)
-    output = subprocess.check_output(destcmd, stdin=pipe.stdout)
-    pipe.wait()
-    #print(pipe.returncode, file=sys.stderr)
-    return pipe.returncode
+        pipe = subprocess.Popen(srccmd, stdout=subprocess.PIPE)
+        output = subprocess.check_output(destcmd, stdin=pipe.stdout)
+        pipe.wait()
+        #print(pipe.returncode, file=sys.stderr)
+        return pipe.returncode
+
+    if destloc == '-':
+        process = subprocess.Popen(srccmd)
+    else:
+        with open(destloc) as f:
+            process = subprocess.Popen(srccmd, stdout=f)
+
+    process.wait()
+    return process.returncode
 
 def find_old_backup(bak_dir_time_objs,recurse_val = 0):
     """ Find oldest time object in "bak_dir_time_objs" structure.
@@ -131,6 +141,8 @@ if __name__ == "__main__":
                         help="only keep latest snapshot on source filesystem")
     parser.add_argument('-d', '--debug', action='store_true',
                         help="enable btrfs debugging on send/receive")
+    parser.add_argument('--send-only', action='store_true',
+                        help="only btrfs send, do not receive")
     parser.add_argument('--num-backups', type=int, default=0,
                         help="only store given number of backups in backup folder")
     parser.add_argument('--snapshot-folder',
@@ -149,7 +161,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     #This does not include a test if the destination is a subvolume. It should be and this should be tested.
-    if os.path.exists(args.backup):
+    if args.send_only or os.path.exists(args.backup):
         backuploc = args.backup
     else:
         print("backup destination subvolume does not exist", file=sys.stderr)
@@ -171,10 +183,15 @@ if __name__ == "__main__":
         LASTNAME = os.path.join(SNAPSHOTDIR, '.latest')
         latest = os.path.join(sourceloc, LASTNAME)
 
+    if args.send_only and backuploc != '-':
+        backuplocdir = os.path.dirname(backuploc)
+    else:
+        backuplocdir = backuploc
+
     # Ensure backup directory exists
-    if not os.path.exists(backuploc):
+    if backuploc != '-' and not os.path.exists(backuplocdir):
         try:
-            os.makedirs(backuploc)
+            os.makedirs(backuplocdir)
         except:
             print("error creating new backup location:", str(backuploc), file=sys.stderr)
             sys.exit(1)
@@ -202,14 +219,14 @@ if __name__ == "__main__":
     if os.path.exists(real_latest):
         print('snapshot successful; sending incremental backup from', sourcesnap,
             'to', backuploc, 'using base', real_latest, file=sys.stderr)
-        send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug)
+        send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug, receive=not args.send_only)
         if args.latest_only:
             print('removing old snapshot', real_latest, file=sys.stderr)
             delete_snapshot(real_latest)
     else:
         print('snapshot successful; sending backup from', sourcesnap,
             'to', backuploc, file=sys.stderr)
-        send_snapshot(sourcesnap, backuploc, debug=args.debug)
+        send_snapshot(sourcesnap, backuploc, debug=args.debug, receive=not args.send_only)
 
     if os.path.islink(latest):
         os.unlink(latest)

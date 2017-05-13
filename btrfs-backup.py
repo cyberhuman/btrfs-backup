@@ -219,7 +219,19 @@ if __name__ == "__main__":
     if os.path.exists(real_latest):
         print('snapshot successful; sending incremental backup from', sourcesnap,
             'to', backuploc, 'using base', real_latest, file=sys.stderr)
-        send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug, receive=not args.send_only)
+        try:
+            exitcode = send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug, receive=not args.send_only)
+            if exitcode != 0:
+                print('not removing old snapshot', real_latest, 'because snapshot process exited with code', exitcode, file=sys.stderr)
+        except:
+            print('not removing old snapshot', real_latest, 'because of an error:', sys.exc_info()[0], file=sys.stderr)
+            exitcode=12345
+
+        if exitcode != 0:
+            print('removing new snapshot', str(sourcesnap), file=sys.stderr)
+            delete_snapshot(str(sourcesnap))
+            sys.exit(2)
+
         if args.latest_only:
             print('removing old snapshot', real_latest, file=sys.stderr)
             delete_snapshot(real_latest)

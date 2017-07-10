@@ -143,6 +143,8 @@ if __name__ == "__main__":
                         help="enable btrfs debugging on send/receive")
     parser.add_argument('--no-receive', action='store_true',
                         help="only btrfs send, do not receive")
+    parser.add_argument('--no-snapshot', action='store_true',
+                        help="only btrfs send, do not snapshot")
     parser.add_argument('--num-backups', type=int, default=0,
                         help="only store given number of backups in backup folder")
     parser.add_argument('--snapshot-folder',
@@ -196,27 +198,34 @@ if __name__ == "__main__":
             print("error creating new backup location:", str(backuploc), file=sys.stderr)
             sys.exit(1)
 
-    # Ensure snapshot directory exists
-    snapdir = os.path.join(sourceloc, SNAPSHOTDIR)
-    print("snapdir:", str(snapdir), file=sys.stderr)
-    if not os.path.exists(snapdir):
-        os.mkdir(snapdir)
+    real_latest = os.path.realpath(latest)
 
-    # First we need to create a new snapshot on the source disk
-    sourcesnap = new_snapshot(sourceloc, snapdir, snapprefix)
-    print("sourcesnap:", str(sourcesnap), file=sys.stderr)
+    if not args.no_snapshot:
+        # Ensure snapshot directory exists
+        snapdir = os.path.join(sourceloc, SNAPSHOTDIR)
+        print("snapdir:", str(snapdir), file=sys.stderr)
+        if not os.path.exists(snapdir):
+            os.mkdir(snapdir)
 
-    if not sourcesnap:
-        print("snapshot failed", file=sys.stderr)
-        sys.exit(1)
+        # First we need to create a new snapshot on the source disk
+        sourcesnap = new_snapshot(sourceloc, snapdir, snapprefix)
+        print("sourcesnap:", str(sourcesnap), file=sys.stderr)
+
+        if not sourcesnap:
+            print("snapshot failed", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if os.path.exists(real_latest):
+            sourcesnap = real_latest
+        else:
+            print("snapshot does not exist", file=sys.stderr)
+            sys.exit(1)
 
     # Need to sync
     subprocess.check_call(['sync'])
 
     # Now we need to send the snapshot (incrementally, if possible)
-    real_latest = os.path.realpath(latest)
-
-    if os.path.exists(real_latest):
+    if not args.no_snapshot and os.path.exists(real_latest):
         print('snapshot successful; sending incremental backup from', sourcesnap,
             'to', backuploc, 'using base', real_latest, file=sys.stderr)
         try:
@@ -240,14 +249,16 @@ if __name__ == "__main__":
             'to', backuploc, file=sys.stderr)
         send_snapshot(sourcesnap, backuploc, debug=args.debug, receive=not args.no_receive)
 
-    if os.path.islink(latest):
-        os.unlink(latest)
-    elif os.path.exists(latest):
-        print('confusion:', latest, "should be a symlink", file=sys.stderr)
+    if not args.no_snapshot:
+        if os.path.islink(latest):
+            os.unlink(latest)
+        elif os.path.exists(latest):
+            print('confusion:', latest, "should be a symlink", file=sys.stderr)
 
-    # Make .latest point to this backup
-    print('new snapshot at', sourcesnap, file=sys.stderr)
-    os.symlink(sourcesnap, latest)
+        # Make .latest point to this backup
+        print('new snapshot at', sourcesnap, file=sys.stderr)
+        os.symlink(sourcesnap, latest)
+
     print('backup complete', file=sys.stderr)
 
     # cleanup backups > NUM_BACKUPS in backup target

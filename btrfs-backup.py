@@ -44,7 +44,7 @@ def new_snapshot(disk, snapshotdir, snapshotprefix, readonly=True):
     command += [disk, snaploc]
 
     try:
-        subprocess.check_call(command)
+        subprocess.check_call(command, stdout=subprocess.DEVNULL)
         return snaploc
     except CalledProcessError:
         print("Error on command:", str(command), file=sys.stderr)

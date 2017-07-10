@@ -141,7 +141,7 @@ if __name__ == "__main__":
                         help="only keep latest snapshot on source filesystem")
     parser.add_argument('-d', '--debug', action='store_true',
                         help="enable btrfs debugging on send/receive")
-    parser.add_argument('--send-only', action='store_true',
+    parser.add_argument('--no-receive', action='store_true',
                         help="only btrfs send, do not receive")
     parser.add_argument('--num-backups', type=int, default=0,
                         help="only store given number of backups in backup folder")
@@ -161,7 +161,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     #This does not include a test if the destination is a subvolume. It should be and this should be tested.
-    if args.send_only or os.path.exists(args.backup):
+    if args.no_receive or os.path.exists(args.backup):
         backuploc = args.backup
     else:
         print("backup destination subvolume does not exist", file=sys.stderr)
@@ -183,7 +183,7 @@ if __name__ == "__main__":
         LASTNAME = os.path.join(SNAPSHOTDIR, '.latest')
         latest = os.path.join(sourceloc, LASTNAME)
 
-    if args.send_only and backuploc != '-':
+    if args.no_receive and backuploc != '-':
         backuplocdir = os.path.dirname(backuploc)
     else:
         backuplocdir = backuploc
@@ -220,7 +220,7 @@ if __name__ == "__main__":
         print('snapshot successful; sending incremental backup from', sourcesnap,
             'to', backuploc, 'using base', real_latest, file=sys.stderr)
         try:
-            exitcode = send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug, receive=not args.send_only)
+            exitcode = send_snapshot(sourcesnap, backuploc, real_latest, debug=args.debug, receive=not args.no_receive)
             if exitcode != 0:
                 print('not removing old snapshot', real_latest, 'because snapshot process exited with code', exitcode, file=sys.stderr)
         except:
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     else:
         print('snapshot successful; sending backup from', sourcesnap,
             'to', backuploc, file=sys.stderr)
-        send_snapshot(sourcesnap, backuploc, debug=args.debug, receive=not args.send_only)
+        send_snapshot(sourcesnap, backuploc, debug=args.debug, receive=not args.no_receive)
 
     if os.path.islink(latest):
         os.unlink(latest)
@@ -251,5 +251,5 @@ if __name__ == "__main__":
     print('backup complete', file=sys.stderr)
 
     # cleanup backups > NUM_BACKUPS in backup target
-    if (NUM_BACKUPS > 0):
+    if not args.no_receive and NUM_BACKUPS > 0:
         delete_old_backups(backuploc, NUM_BACKUPS, snapprefix)
